@@ -2,7 +2,9 @@
   "CN": "server.dc1.cluster.local",
   "hosts": [
     "server.dc1.cluster.local",
-    "127.0.0.1"
+    "127.0.0.1",
+    "consul.default.svc.cluster.local",
+    "vault.default.svc.cluster.local"
   ],
   "key": {
     "algo": "rsa",

@@ -1,0 +1,184 @@
+# Default values for vault.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+replicaCount: 3
+## The name of the secret to use if pulling images from a private registry.
+# imagePullSecret:
+image:
+  repository: vault
+  tag: 0.11.1
+  pullPolicy: IfNotPresent
+
+consulAgent:
+  repository: consul
+  tag: 1.0.3
+  pullPolicy: IfNotPresent
+  # If you set join to a consul server endpoint, a consul agent will
+  # be started in the vault pod.  If unset, no agent container is
+  # deployed.
+  join: consul.default.svc.cluster.local
+  #
+  # If your consul server uses encrypted gossip, specify the secret
+  # name here.  Format should match the stable/consul chart.
+  #gossipKeySecretName: consul-gossip
+  #
+  # Optionally override the agent's http port
+  HttpPort: 8443
+
+unseal:
+  image:
+    repository: quay.io/jetstack/vault-unsealer
+    tag: 0.3.0
+    pullPolicy: IfNotPresent
+  vault:
+    address: "127.0.0.1"
+    port: 8200
+    scheme: "https"
+  awsSsmKeyPrefix: "kubernetes-"
+  awsKmsKeyId: "alias/vault"
+  secretShares: 5
+  secretThreshold: 3
+
+service:
+  name: vault
+  type: ClusterIP
+  port: 8200
+  externalPort: 8200
+  clusterPort: 8201
+  # clusterIP: None
+  annotations: {}
+  #   cloud.google.com/load-balancer-type: "Internal"
+  #
+  # An example using type:loadbalancer and AWS internal ELB on kops
+  # type: LoadBalancer
+  # annotations:
+  #   dns.alpha.kubernetes.io/internal: vault.internal.domain.name
+  #   service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0
+ingress:
+  enabled: false
+  labels: {}
+  # Used to create Ingress record (should used with service.type: ClusterIP).
+  # hosts:
+  #  - chart-example.local
+  # annotations:
+  #   kubernetes.io/ingress.class: nginx
+  #   kubernetes.io/tls-acme: "true"
+  # tls:
+  #   Secrets must be manually created in the namespace.
+  #   - secretName: chart-example-tls
+  #     hosts:
+  #       - chart-example.local
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+affinity: |
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app: {{ template "vault.fullname" . }}
+            release: {{ .Release.Name }}
+
+## Deployment annotations
+annotations: {}
+
+podAnnotations: {}
+##    Read more about kube2iam to provide access to s3 https://github.com/jtblin/kube2iam
+#     iam.amazonaws.com/role: role-arn
+
+## Sample for unsealing vault on startup
+## if automation saves your unseal keys to a k8s secret on deploy
+## writing a script to do this would be trivial and solves the
+## issues of scaling up if deployed in HA.
+# lifecycle: |
+#   postStart:
+#     exec:
+#       command: ["./unseal -s my-unseal-keys"]
+
+vault:
+  # Only used to enable dev mode. When in dev mode, the rest of this config
+  # section below is not used to configure Vault. See
+  # https://www.vaultproject.io/intro/getting-started/dev-server.html for more
+  # information.
+  dev: false
+  # Allows the mounting of various custom secrets th enable production vault
+  # configurations. The comments show an example usage for mounting a TLS
+  # secret. The two fields required are a secretName indicating the name of
+  # the Kubernetes secret (created outside of this chart), and the mountPath
+  # at which it should be mounted in the Vault container.
+  customSecrets:
+  - secretName: consul
+    mountPath: /etc/tls
+
+  #
+  # Configure additional environment variables for the Vault containers
+  extraEnv: {}
+  #   - name: VAULT_API_ADDR
+  #     value: "https://vault.internal.domain.name:8200"
+  extraContainers: {}
+  ## Additional containers to be added to the Vault pod
+  # - name: vault-sidecar
+  #   image: vault-sidecar:latest
+  #   volumeMounts:
+  #   - name: some-mount
+  #     mountPath: /some/path
+  extraVolumes: {}
+  # Log level
+  # https://www.vaultproject.io/docs/commands/server.html#log-level
+  logLevel: "info"
+  ## Additional volumes to the vault pod.
+  # - name: extra-volume
+  #   secret:
+  #     secretName: some-secret
+  readiness:
+    readyIfSealed: true
+    readyIfStandby: true
+    readyIfUninitialized: true
+  config:
+    # A YAML representation of a final vault config.json file.
+    # See https://www.vaultproject.io/docs/configuration/ for more information.
+    api_addr: "0.0.0.0:8200"
+    cluster_addr: "0.0.0.0:8201"
+    ui: true
+
+    ha_storage:
+      consul:
+        address: "127.0.0.1:8443"
+        path: "vault/"
+        scheme: "https"
+        tls_ca_file: /etc/tls/ca.pem
+        tls_cert_file: /etc/tls/consul.pem
+        tls_key_file: /etc/tls/consul-key.pem
+
+    listener:
+      tcp:
+        address: "[::]:8200"
+        cluster_address: "[::]:8201"
+        tls_disable: 0
+        tls_cert_file: /etc/tls/consul.pem
+        tls_key_file: /etc/tls/consul-key.pem
+        tls_client_ca_file: /etc/tls/ca.pem
+        tls_prefer_server_cipher_suites: true
+        tls_cipher_suites: TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_CBC_SHA,TLS_RSA_WITH_AES_256_CBC_SHA
+
+    # See https://www.vaultproject.io/docs/configuration/storage/ for storage backends
+    storage:
+      consul:
+        address: "127.0.0.1:8443"
+        path: "vault/"
+        scheme: "https"
+        tls_cert_file: /etc/tls/consul.pem
+        tls_key_file: /etc/tls/consul-key.pem
+        tls_ca_file: /etc/tls/ca.pem
+
